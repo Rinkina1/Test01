@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Survey Platform</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Survey Platform</h1>
+      <p>ระบบเก็บข้อมูลแบบสอบถาม</p>
+    </div>
+    <div class="body">
+      <p style="margin-bottom: 18px;">ระบบสำหรับสร้างและเก็บข้อมูลแบบสอบถาม</p>
+
+      <h3 style="font-size: 16px; margin: 18px 0 10px;">แบบสอบถามที่เปิดให้ตอบ</h3>
+      <div id="surveys" class="survey-list"></div>
+
+      <hr style="margin: 28px 0; border: none; border-top: 1px solid #eee;">
+
+      <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a class="btn" href="admin.html">เข้าสู่ระบบผู้ดูแล</a>
+        <button class="btn secondary" id="seedBtn">โหลดตัวอย่างแบบสอบถาม</button>
+      </div>
+      <p class="muted" style="margin-top: 12px;">
+        ข้อมูลถูกเก็บใน localStorage ของเบราว์เซอร์ (ไม่ต้องตั้งค่าฐานข้อมูล)
+        — สำหรับโหมด server มี <code>server.js</code> พร้อมใช้งานใน README
+      </p>
+    </div>
+  </div>
+
+<script src="storage.js"></script>
+<script>
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderSurveys() {
+  const list = Store.getSurveys().filter((s) => s.active);
+  const box = document.getElementById('surveys');
+  if (list.length === 0) {
+    box.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถาม — กด "โหลดตัวอย่าง" หรือเข้าผู้ดูแลเพื่อสร้าง</div>';
+    return;
+  }
+  box.innerHTML = list.map((s) => `
+    <div class="survey-card">
+      <div style="flex:1; min-width:0;">
+        <div class="title">${escapeHtml(s.title)}</div>
+        <div class="meta">${s.field_count} คำถาม · ${s.response_count} คำตอบ</div>
+      </div>
+      <a class="btn sm" href="survey.html?slug=${encodeURIComponent(s.slug)}">เริ่มทำ →</a>
+    </div>
+  `).join('');
+}
+
+document.getElementById('seedBtn').addEventListener('click', () => {
+  const s = Store.seedDemo();
+  if (!s) return alert('มีข้อมูลอยู่แล้ว');
+  alert(`สร้างตัวอย่างแล้ว: "${s.title}"`);
+  renderSurveys();
+});
+
+renderSurveys();
+</script>
+</body>
+</html>

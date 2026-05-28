@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>คำตอบแบบสอบถาม</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  td { max-width: 280px; word-break: break-word; }
+  .pagination { display: flex; gap: 6px; justify-content: center; margin-top: 18px; flex-wrap: wrap; }
+  .pagination button { padding: 6px 12px; border: 1px solid #ddd; background: #fff; border-radius: 6px; cursor: pointer; }
+  .pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .pagination button.active { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+  <div class="container wide">
+    <div class="header">
+      <div class="row">
+        <div>
+          <h1 id="title">กำลังโหลด...</h1>
+          <p id="desc"></p>
+        </div>
+        <a class="btn sm secondary" href="admin.html">← Dashboard</a>
+      </div>
+    </div>
+    <div class="body">
+      <div class="toolbar">
+        <div>
+          <span class="muted">ทั้งหมด <strong id="total">0</strong> คำตอบ</span>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn sm" id="exportBtn">⬇ Export CSV</button>
+          <a class="btn sm ghost" id="surveyLink" target="_blank">เปิดหน้าตอบ ↗</a>
+        </div>
+      </div>
+      <div id="alert"></div>
+      <div class="table-wrap">
+        <table>
+          <thead id="thead"></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+<script src="storage.js"></script>
+<script>
+if (!Store.requireAuth('login.html')) {}
+
+const params = new URLSearchParams(location.search);
+const surveyId = parseInt(params.get('id'));
+let currentPage = 1;
+let survey = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function formatValue(v) {
+  if (v === null || v === undefined || v === '') return '<span class="muted">—</span>';
+  if (Array.isArray(v)) return v.length === 0 ? '<span class="muted">—</span>' : v.map(escapeHtml).join(', ');
+  return escapeHtml(v);
+}
+
+function loadPage(page) {
+  survey = Store.getSurvey(surveyId);
+  if (!survey) {
+    document.getElementById('title').textContent = 'ไม่พบแบบสอบถาม';
+    document.getElementById('alert').innerHTML = '<div class="alert error">ไม่พบแบบสอบถาม หรือถูกลบไปแล้ว</div>';
+    return;
+  }
+
+  document.getElementById('title').textContent = survey.title;
+  document.getElementById('desc').textContent = survey.description || '';
+  document.getElementById('surveyLink').href = `survey.html?slug=${encodeURIComponent(survey.slug)}`;
+
+  const { data, total, pages } = Store.getResponses(surveyId, { page, limit: 20 });
+  currentPage = page;
+  document.getElementById('total').textContent = total;
+
+  const headers = ['ID', ...survey.fields.map((f) => f.label), 'วันที่ตอบ', ''];
+  document.getElementById('thead').innerHTML =
+    '<tr>' + headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
+
+  if (data.length === 0) {
+    document.getElementById('tbody').innerHTML =
+      `<tr><td colspan="${headers.length}" class="empty">ยังไม่มีคำตอบ</td></tr>`;
+  } else {
+    document.getElementById('tbody').innerHTML = data.map((r) => `
+      <tr>
+        <td>${r.id}</td>
+        ${survey.fields.map((f) => `<td>${formatValue(r.data?.[f.key])}</td>`).join('')}
+        <td><span class="muted">${new Date(r.created_at).toLocaleString('th-TH')}</span></td>
+        <td><button class="btn sm danger" data-id="${r.id}">ลบ</button></td>
+      </tr>
+    `).join('');
+    document.querySelectorAll('button[data-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!confirm('ลบคำตอบนี้?')) return;
+        Store.deleteResponse(btn.dataset.id);
+        loadPage(currentPage);
+      });
+    });
+  }
+  renderPagination(pages);
+}
+
+function renderPagination(totalPages) {
+  const box = document.getElementById('pagination');
+  if (totalPages <= 1) { box.innerHTML = ''; return; }
+  let html = '';
+  html += `<button${currentPage === 1 ? ' disabled' : ''} data-p="${currentPage - 1}">← ก่อนหน้า</button>`;
+  for (let p = 1; p <= totalPages; p++) {
+    html += `<button${p === currentPage ? ' class="active"' : ''} data-p="${p}">${p}</button>`;
+  }
+  html += `<button${currentPage === totalPages ? ' disabled' : ''} data-p="${currentPage + 1}">ถัดไป →</button>`;
+  box.innerHTML = html;
+  box.querySelectorAll('button[data-p]').forEach((b) => {
+    b.addEventListener('click', () => loadPage(parseInt(b.dataset.p)));
+  });
+}
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  if (!survey) return;
+  Store.downloadCSV(surveyId);
+});
+
+loadPage(1);
+</script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>แบบสอบถาม</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 id="title">กำลังโหลด...</h1>
+      <p id="desc"></p>
+    </div>
+    <div class="body">
+      <div id="alert"></div>
+      <form id="form"></form>
+      <div id="done" style="display:none; text-align:center; padding: 10px 0;">
+        <button type="button" class="btn secondary" id="againBtn">ตอบอีกครั้ง</button>
+        <a class="btn ghost" href="index.html">กลับหน้าแรก</a>
+      </div>
+    </div>
+  </div>
+
+<script src="storage.js"></script>
+<script>
+const params = new URLSearchParams(location.search);
+const slug = params.get('slug') || location.pathname.split('/').pop().replace(/\.html$/, '');
+
+const alertBox = document.getElementById('alert');
+const form = document.getElementById('form');
+const doneBox = document.getElementById('done');
+let survey = null;
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function showAlert(type, msg) {
+  alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderField(f) {
+  const reqMark = f.required ? '<span class="required">*</span>' : '';
+  const help = f.help ? `<div class="help">${escapeHtml(f.help)}</div>` : '';
+  const ph = f.placeholder ? ` placeholder="${escapeHtml(f.placeholder)}"` : '';
+  const req = f.required ? ' required' : '';
+  const id = `f_${f.key}`;
+
+  let inner = '';
+  if (f.type === 'text' || f.type === 'email' || f.type === 'tel') {
+    inner = `<input type="${f.type}" id="${id}" name="${f.key}"${ph}${req}>`;
+  } else if (f.type === 'number') {
+    const min = f.min != null ? ` min="${f.min}"` : '';
+    const max = f.max != null ? ` max="${f.max}"` : '';
+    inner = `<input type="number" id="${id}" name="${f.key}"${ph}${min}${max}${req}>`;
+  } else if (f.type === 'textarea') {
+    inner = `<textarea id="${id}" name="${f.key}"${ph}${req}></textarea>`;
+  } else if (f.type === 'select') {
+    inner = `<select id="${id}" name="${f.key}"${req}><option value="">-- เลือก --</option>` +
+      f.options.map((o) => `<option value="${escapeHtml(o)}">${escapeHtml(o)}</option>`).join('') +
+      `</select>`;
+  } else if (f.type === 'radio') {
+    inner = f.options.map((o, i) => `
+      <div class="option-row">
+        <input type="radio" id="${id}_${i}" name="${f.key}" value="${escapeHtml(o)}"${req && i === 0 ? ' required' : ''}>
+        <label for="${id}_${i}">${escapeHtml(o)}</label>
+      </div>`).join('');
+  } else if (f.type === 'checkbox') {
+    inner = f.options.map((o, i) => `
+      <div class="option-row">
+        <input type="checkbox" id="${id}_${i}" name="${f.key}" value="${escapeHtml(o)}">
+        <label for="${id}_${i}">${escapeHtml(o)}</label>
+      </div>`).join('');
+  } else if (f.type === 'rating') {
+    const buttons = [];
+    for (let i = 1; i <= f.max; i++) {
+      buttons.push(`<button type="button" data-val="${i}">${i}</button>`);
+    }
+    inner = `<div class="rating" id="${id}">${buttons.join('')}<input type="hidden" name="${f.key}"${req}></div>`;
+  }
+
+  return `<div class="field">
+    <label for="${id}">${escapeHtml(f.label)}${reqMark}</label>
+    ${inner}
+    ${help}
+  </div>`;
+}
+
+function renderForm() {
+  form.innerHTML = survey.fields.map(renderField).join('') +
+    `<button type="submit" class="btn lg" style="margin-top: 8px;">ส่งคำตอบ</button>`;
+
+  form.querySelectorAll('.rating').forEach((wrap) => {
+    wrap.addEventListener('click', (e) => {
+      if (e.target.tagName !== 'BUTTON') return;
+      const val = e.target.dataset.val;
+      wrap.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.val === val));
+      wrap.querySelector('input[type=hidden]').value = val;
+    });
+  });
+}
+
+function load() {
+  if (!slug) {
+    document.getElementById('title').textContent = 'ไม่ระบุแบบสอบถาม';
+    document.getElementById('desc').textContent = 'ต้องระบุ ?slug=... ใน URL';
+    form.style.display = 'none';
+    return;
+  }
+  survey = Store.getSurveyBySlug(slug);
+  if (!survey) {
+    document.getElementById('title').textContent = 'ไม่พบแบบสอบถาม';
+    document.getElementById('desc').textContent = `slug: ${slug}`;
+    form.style.display = 'none';
+    return;
+  }
+  document.getElementById('title').textContent = survey.title;
+  document.getElementById('desc').textContent = survey.description || '';
+  renderForm();
+}
+
+form.addEventListener('submit', (e) => {
+  e.preventDefault();
+  alertBox.innerHTML = '';
+  const fd = new FormData(form);
+  const data = {};
+  for (const f of survey.fields) {
+    if (f.type === 'checkbox') {
+      data[f.key] = fd.getAll(f.key);
+    } else {
+      data[f.key] = fd.get(f.key);
+    }
+  }
+  try {
+    Store.createResponse(slug, data);
+    showAlert('success', '✓ บันทึกข้อมูลเรียบร้อยแล้ว ขอบคุณสำหรับการตอบแบบสอบถาม');
+    form.style.display = 'none';
+    doneBox.style.display = 'block';
+  } catch (err) {
+    showAlert('error', err.message || 'เกิดข้อผิดพลาด');
+  }
+});
+
+document.getElementById('againBtn').addEventListener('click', () => {
+  doneBox.style.display = 'none';
+  form.style.display = '';
+  renderForm();
+  alertBox.innerHTML = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
+
+load();
+</script>
+</body>
+</html>

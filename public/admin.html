@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container wide">
+    <div class="header">
+      <div class="row">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p>จัดการแบบสอบถามทั้งหมด</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="btn sm" id="newBtn">+ สร้างแบบสอบถาม</button>
+          <button class="btn sm secondary" id="seedBtn" title="เพิ่มแบบสอบถามตัวอย่าง">+ ตัวอย่าง</button>
+          <button class="btn sm secondary" id="logoutBtn">ออกจากระบบ</button>
+        </div>
+      </div>
+    </div>
+    <div class="body">
+      <div class="stats-grid" id="stats"></div>
+
+      <h2 style="font-size: 18px; margin-bottom: 14px;">แบบสอบถามทั้งหมด</h2>
+      <div id="surveyList" class="survey-list"></div>
+    </div>
+  </div>
+
+  <dialog id="editDialog">
+    <div class="dialog-body">
+      <div class="dialog-title" id="dialogTitle">สร้างแบบสอบถามใหม่</div>
+      <div id="editAlert"></div>
+      <form id="editForm">
+        <input type="hidden" id="editId">
+        <div class="field">
+          <label>ชื่อแบบสอบถาม<span class="required">*</span></label>
+          <input type="text" id="editTitle" required>
+        </div>
+        <div class="field">
+          <label>คำอธิบาย</label>
+          <textarea id="editDesc" rows="2"></textarea>
+        </div>
+        <div class="field">
+          <label>Slug (URL) <span class="muted">— ปล่อยว่างเพื่อสร้างจากชื่อ</span></label>
+          <input type="text" id="editSlug" placeholder="เช่น customer-satisfaction">
+        </div>
+        <div class="field">
+          <label style="display: flex; gap: 8px; align-items: center; cursor: pointer;">
+            <input type="checkbox" id="editActive" checked>
+            <span>เปิดให้ตอบ (active)</span>
+          </label>
+        </div>
+
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid #eee;">
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <strong>คำถาม (Fields)</strong>
+          <button type="button" class="btn sm" id="addFieldBtn">+ เพิ่มคำถาม</button>
+        </div>
+        <div id="fieldsContainer"></div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+          <button type="button" class="btn secondary" id="cancelBtn">ยกเลิก</button>
+          <button type="submit" class="btn">บันทึก</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+<script src="storage.js"></script>
+<script>
+if (!Store.requireAuth('login.html')) {} // redirects if not logged in
+
+const TYPE_LABELS = {
+  text: 'ข้อความสั้น', textarea: 'ข้อความยาว',
+  email: 'อีเมล', tel: 'เบอร์โทร', number: 'ตัวเลข',
+  radio: 'เลือกตัวเลือกเดียว', checkbox: 'เลือกได้หลายข้อ',
+  select: 'Dropdown', rating: 'คะแนน (1-N)',
+};
+const TYPES_WITH_OPTIONS = Store.TYPES_WITH_OPTIONS;
+
+const statsBox = document.getElementById('stats');
+const list = document.getElementById('surveyList');
+const dialog = document.getElementById('editDialog');
+const fieldsContainer = document.getElementById('fieldsContainer');
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderStats() {
+  const s = Store.getStats();
+  statsBox.innerHTML = `
+    <div class="stat-card"><div class="label">แบบสอบถามทั้งหมด</div><div class="value">${s.surveys}</div></div>
+    <div class="stat-card"><div class="label">เปิดใช้งาน</div><div class="value">${s.active_surveys}</div></div>
+    <div class="stat-card"><div class="label">คำตอบทั้งหมด</div><div class="value">${s.total_responses}</div></div>
+    <div class="stat-card"><div class="label">คำตอบวันนี้</div><div class="value">${s.today_responses}</div></div>
+  `;
+}
+
+function renderSurveys() {
+  const surveys = Store.getSurveys();
+  if (surveys.length === 0) {
+    list.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถาม — กด "+ สร้างแบบสอบถาม" หรือ "+ ตัวอย่าง"</div>';
+    return;
+  }
+  list.innerHTML = surveys.map((s) => `
+    <div class="survey-card">
+      <div style="flex: 1; min-width: 0;">
+        <div class="title">
+          ${escapeHtml(s.title)}
+          <span class="badge ${s.active ? 'active' : 'inactive'}">${s.active ? 'เปิด' : 'ปิด'}</span>
+        </div>
+        <div class="meta">
+          ${s.field_count} คำถาม · ${s.response_count} คำตอบ ·
+          <a class="link" href="survey.html?slug=${encodeURIComponent(s.slug)}" target="_blank">เปิดหน้าตอบ ↗</a>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn sm" href="admin-survey.html?id=${s.id}">ดูคำตอบ</a>
+        <button class="btn sm ghost" data-action="edit" data-id="${s.id}">แก้ไข</button>
+        <button class="btn sm danger" data-action="delete" data-id="${s.id}">ลบ</button>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('button[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.id);
+      if (btn.dataset.action === 'edit') openEdit(id);
+      if (btn.dataset.action === 'delete') deleteSurvey(id);
+    });
+  });
+}
+
+function addFieldRow(field) {
+  field = field || { type: 'text', label: '', key: '', required: false, options: [] };
+  const idx = fieldsContainer.children.length;
+  const div = document.createElement('div');
+  div.className = 'field-row';
+  div.innerHTML = `
+    <div class="field-row-header">
+      <strong>คำถามที่ ${idx + 1}</strong>
+      <div style="display: flex; gap: 6px;">
+        <button type="button" class="btn sm ghost" data-act="up" title="เลื่อนขึ้น">↑</button>
+        <button type="button" class="btn sm ghost" data-act="down" title="เลื่อนลง">↓</button>
+        <button type="button" class="btn sm danger" data-act="remove">ลบ</button>
+      </div>
+    </div>
+    <div class="grid-2">
+      <div class="field" style="margin-bottom: 8px;">
+        <label>ประเภท</label>
+        <select class="f-type">
+          ${Object.entries(TYPE_LABELS).map(([k, v]) =>
+            `<option value="${k}"${k === field.type ? ' selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom: 8px;">
+        <label>Key (สำหรับ CSV)</label>
+        <input type="text" class="f-key" value="${escapeHtml(field.key || '')}" placeholder="auto">
+      </div>
+    </div>
+    <div class="field" style="margin-bottom: 8px;">
+      <label>หัวข้อคำถาม</label>
+      <input type="text" class="f-label" value="${escapeHtml(field.label || '')}" required>
+    </div>
+    <div class="field f-options-wrap" style="margin-bottom: 8px; display: none;">
+      <label>ตัวเลือก <span class="muted">— คั่นด้วยขึ้นบรรทัดใหม่</span></label>
+      <textarea class="f-options" rows="3" placeholder="ตัวเลือก 1&#10;ตัวเลือก 2">${escapeHtml((field.options || []).join('\n'))}</textarea>
+    </div>
+    <div class="field f-rating-wrap" style="margin-bottom: 8px; display: none;">
+      <label>คะแนนสูงสุด (2-10)</label>
+      <input type="number" class="f-max" min="2" max="10" value="${field.max || 5}">
+    </div>
+    <div style="display: flex; gap: 16px; align-items: center;">
+      <label style="display: flex; gap: 6px; align-items: center; cursor: pointer; margin-bottom: 0;">
+        <input type="checkbox" class="f-required"${field.required ? ' checked' : ''}>
+        <span>จำเป็น</span>
+      </label>
+    </div>
+  `;
+  fieldsContainer.appendChild(div);
+
+  const typeSelect = div.querySelector('.f-type');
+  const updateVisibility = () => {
+    div.querySelector('.f-options-wrap').style.display = TYPES_WITH_OPTIONS.includes(typeSelect.value) ? '' : 'none';
+    div.querySelector('.f-rating-wrap').style.display = typeSelect.value === 'rating' ? '' : 'none';
+  };
+  typeSelect.addEventListener('change', updateVisibility);
+  updateVisibility();
+
+  div.querySelector('[data-act=remove]').addEventListener('click', () => {
+    div.remove();
+    renumber();
+  });
+  div.querySelector('[data-act=up]').addEventListener('click', () => {
+    if (div.previousElementSibling) {
+      fieldsContainer.insertBefore(div, div.previousElementSibling);
+      renumber();
+    }
+  });
+  div.querySelector('[data-act=down]').addEventListener('click', () => {
+    if (div.nextElementSibling) {
+      fieldsContainer.insertBefore(div.nextElementSibling, div);
+      renumber();
+    }
+  });
+}
+
+function renumber() {
+  [...fieldsContainer.children].forEach((row, i) => {
+    row.querySelector('strong').textContent = `คำถามที่ ${i + 1}`;
+  });
+}
+
+function collectFields() {
+  return [...fieldsContainer.children].map((row) => {
+    const type = row.querySelector('.f-type').value;
+    const f = {
+      type,
+      label: row.querySelector('.f-label').value.trim(),
+      key: row.querySelector('.f-key').value.trim() || undefined,
+      required: row.querySelector('.f-required').checked,
+    };
+    if (TYPES_WITH_OPTIONS.includes(type)) {
+      f.options = row.querySelector('.f-options').value
+        .split('\n').map((s) => s.trim()).filter(Boolean);
+    }
+    if (type === 'rating') {
+      f.max = parseInt(row.querySelector('.f-max').value) || 5;
+    }
+    return f;
+  });
+}
+
+function openEdit(id) {
+  document.getElementById('editAlert').innerHTML = '';
+  fieldsContainer.innerHTML = '';
+  if (id) {
+    const survey = Store.getSurvey(id);
+    if (!survey) return alert('ไม่พบแบบสอบถาม');
+    document.getElementById('dialogTitle').textContent = 'แก้ไขแบบสอบถาม';
+    document.getElementById('editId').value = survey.id;
+    document.getElementById('editTitle').value = survey.title;
+    document.getElementById('editDesc').value = survey.description || '';
+    document.getElementById('editSlug').value = survey.slug;
+    document.getElementById('editSlug').disabled = true;
+    document.getElementById('editActive').checked = survey.active;
+    survey.fields.forEach(addFieldRow);
+  } else {
+    document.getElementById('dialogTitle').textContent = 'สร้างแบบสอบถามใหม่';
+    document.getElementById('editId').value = '';
+    document.getElementById('editTitle').value = '';
+    document.getElementById('editDesc').value = '';
+    document.getElementById('editSlug').value = '';
+    document.getElementById('editSlug').disabled = false;
+    document.getElementById('editActive').checked = true;
+    addFieldRow();
+  }
+  dialog.showModal();
+}
+
+function deleteSurvey(id) {
+  if (!confirm('ลบแบบสอบถามนี้พร้อมคำตอบทั้งหมด?')) return;
+  Store.deleteSurvey(id);
+  renderStats();
+  renderSurveys();
+}
+
+document.getElementById('newBtn').addEventListener('click', () => openEdit(null));
+document.getElementById('cancelBtn').addEventListener('click', () => dialog.close());
+document.getElementById('addFieldBtn').addEventListener('click', () => addFieldRow());
+
+document.getElementById('seedBtn').addEventListener('click', () => {
+  const s = Store.seedDemo();
+  if (!s) return alert('มีข้อมูลอยู่แล้ว — ลบก่อนถ้าต้องการ seed ใหม่');
+  renderStats();
+  renderSurveys();
+});
+
+document.getElementById('editForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const alertBox = document.getElementById('editAlert');
+  alertBox.innerHTML = '';
+  const id = document.getElementById('editId').value;
+  const payload = {
+    title: document.getElementById('editTitle').value.trim(),
+    description: document.getElementById('editDesc').value.trim(),
+    active: document.getElementById('editActive').checked,
+    fields: collectFields(),
+  };
+  if (!id) payload.slug = document.getElementById('editSlug').value.trim();
+  if (!payload.title || payload.fields.length === 0) {
+    alertBox.innerHTML = '<div class="alert error">ต้องมีชื่อและคำถามอย่างน้อย 1 ข้อ</div>';
+    return;
+  }
+  try {
+    if (id) Store.updateSurvey(id, payload);
+    else Store.createSurvey(payload);
+    dialog.close();
+    renderStats();
+    renderSurveys();
+  } catch (err) {
+    alertBox.innerHTML = `<div class="alert error">${escapeHtml(err.message)}</div>`;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  Store.logout();
+  location.href = 'login.html';
+});
+
+renderStats();
+renderSurveys();
+</script>
+</body>
+</html>
