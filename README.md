@@ -115,14 +115,61 @@ sqlite3 data/survey.db
 - `GET /health` — server status
 - `GET /api/health/db` — SQLite connection + response count
 
-## Deploy
+## Deploy ขึ้น Fly.io (ไม่ต้องลงอะไรในเครื่อง)
 
-ทุก platform ที่รัน Node.js ได้ใช้ได้ (Railway, Render, Fly.io, VPS):
+ใน repo มี `Dockerfile`, `fly.toml`, GitHub Actions workflow ให้พร้อมแล้ว
 
-1. `npm install` (จะ compile `better-sqlite3` native — ต้องการ build tools)
-2. set env: `JWT_SECRET`, `ADMIN_PASSWORD`, `NODE_ENV=production`
-3. **mount persistent volume ที่ `./data`** ไม่งั้น DB จะหายเวลา redeploy
-4. `npm start`
+### ขั้นตอน (Web UI — ไม่ต้องลง CLI)
+
+1. **สมัคร Fly.io** — https://fly.io/app/sign-up (login ด้วย GitHub ได้) — ต้องผูกบัตรเครดิตแต่ไม่เก็บเงินจนกว่า usage จะเกิน free allowance ($5)
+
+2. **Launch app จาก GitHub** — เปิด https://fly.io/launch แล้ว:
+   - Connect GitHub → เลือก `Rinkina1/Test01`
+   - Fly จะอ่าน `fly.toml` ใน repo อัตโนมัติ
+   - ตั้ง app name (ต้องไม่ซ้ำ เช่น `survey-rinkina1`)
+   - เลือก region: **sin** (Singapore)
+   - กด **Deploy**
+
+3. **สร้าง persistent volume สำหรับ SQLite**
+   - ไปที่ tab **Volumes** ของ app
+   - กด **Create Volume** → name: `survey_data`, region: `sin`, size: `1 GB`
+   - กลับไปที่ Deployments → Redeploy
+
+4. **ตั้ง Secrets** (ที่ tab **Secrets** ของ app):
+   - `JWT_SECRET` = สตริงสุ่มยาวๆ (เช่น `openssl rand -hex 32`)
+   - `ADMIN_PASSWORD` = password ที่ต้องการ
+   - `ADMIN_USERNAME` = `admin` (หรือเปลี่ยน)
+
+5. รอ deploy เสร็จ — Fly จะให้ URL เช่น `https://survey-rinkina1.fly.dev` ใช้งานได้เลย
+
+### Auto-deploy ด้วย GitHub Actions
+
+มี `.github/workflows/fly-deploy.yml` ให้ — ทุกครั้งที่ push ไป main จะ deploy อัตโนมัติ ขั้นตอน setup:
+
+1. ที่ Fly.io ไป **Account → Access Tokens** → สร้าง token ใหม่
+2. ที่ GitHub repo `Rinkina1/Test01` → **Settings → Secrets → Actions** → New secret
+   - Name: `FLY_API_TOKEN`
+   - Value: token ที่ได้จาก Fly
+
+หลังจากนั้น push commit ใหม่ → workflow รัน → deploy เอง
+
+### หรือใช้ flyctl CLI (ทางเลือก ถ้าต้องการลง)
+
+```powershell
+iwr https://fly.io/install.ps1 -useb | iex   # ติดตั้ง flyctl
+fly auth login
+fly launch --copy-config --no-deploy
+fly volumes create survey_data --region sin --size 1
+fly secrets set JWT_SECRET=$(openssl rand -hex 32) ADMIN_PASSWORD=mypassword
+fly deploy
+```
+
+## Deploy ขึ้น platform อื่น
+
+ใช้ `Dockerfile` ที่ให้มาได้กับทุก platform (Railway / Render / Fly.io / VPS):
+
+1. set env: `JWT_SECRET`, `ADMIN_PASSWORD`, `NODE_ENV=production`
+2. **mount persistent volume ที่ `/app/data`** ไม่งั้น DB จะหายเวลา redeploy
 
 ## ความปลอดภัย
 

@@ -1,0 +1,35 @@
+# Fly.io configuration for survey-platform
+# app name will be set during `fly launch` — leave default or change to a unique slug
+
+primary_region = "sin"  # Singapore (closest to Thailand)
+
+[build]
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  DATA_DIR = "/app/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health"
+
+# Persistent volume for SQLite DB — survives redeploys
+[mounts]
+  source = "survey_data"
+  destination = "/app/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
