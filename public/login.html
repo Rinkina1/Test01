@@ -24,7 +24,7 @@
           <label for="password">Password<span class="required">*</span></label>
           <input type="password" id="password" name="password" required autocomplete="current-password" value="admin123">
         </div>
-        <button type="submit" class="btn lg" style="margin-top: 6px;">เข้าสู่ระบบ</button>
+        <button type="submit" class="btn lg" style="margin-top: 6px;" id="submitBtn">เข้าสู่ระบบ</button>
       </form>
       <p class="muted" style="margin-top: 14px; text-align: center;">
         Default: <code>admin</code> / <code>admin123</code>
@@ -34,18 +34,28 @@
 
 <script src="storage.js"></script>
 <script>
-if (Store.isLoggedIn()) location.href = 'admin.html';
+(async () => {
+  if (await Store.isLoggedIn()) location.href = 'admin.html';
+})();
 
-document.getElementById('loginForm').addEventListener('submit', (e) => {
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const alertBox = document.getElementById('alert');
+  const btn = document.getElementById('submitBtn');
   alertBox.innerHTML = '';
-  const u = document.getElementById('username').value.trim();
-  const p = document.getElementById('password').value;
-  if (Store.login(u, p)) {
-    location.href = 'admin.html';
-  } else {
-    alertBox.innerHTML = '<div class="alert error">username หรือ password ไม่ถูกต้อง</div>';
+  btn.disabled = true;
+  btn.textContent = 'กำลังเข้าสู่ระบบ...';
+  try {
+    const u = document.getElementById('username').value.trim();
+    const p = document.getElementById('password').value;
+    const ok = await Store.login(u, p);
+    if (ok) location.href = 'admin.html';
+    else alertBox.innerHTML = '<div class="alert error">username หรือ password ไม่ถูกต้อง</div>';
+  } catch (err) {
+    alertBox.innerHTML = `<div class="alert error">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'เข้าสู่ระบบ';
   }
 });
 </script>

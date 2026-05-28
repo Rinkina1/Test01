@@ -22,10 +22,13 @@
       </div>
     </div>
     <div class="body">
+      <div id="pageAlert"></div>
       <div class="stats-grid" id="stats"></div>
 
       <h2 style="font-size: 18px; margin-bottom: 14px;">แบบสอบถามทั้งหมด</h2>
-      <div id="surveyList" class="survey-list"></div>
+      <div id="surveyList" class="survey-list">
+        <div class="empty">กำลังโหลด...</div>
+      </div>
     </div>
   </div>
 
@@ -64,7 +67,7 @@
 
         <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
           <button type="button" class="btn secondary" id="cancelBtn">ยกเลิก</button>
-          <button type="submit" class="btn">บันทึก</button>
+          <button type="submit" class="btn" id="saveBtn">บันทึก</button>
         </div>
       </form>
     </div>
@@ -72,8 +75,6 @@
 
 <script src="storage.js"></script>
 <script>
-if (!Store.requireAuth('login.html')) {} // redirects if not logged in
-
 const TYPE_LABELS = {
   text: 'ข้อความสั้น', textarea: 'ข้อความยาว',
   email: 'อีเมล', tel: 'เบอร์โทร', number: 'ตัวเลข',
@@ -86,54 +87,69 @@ const statsBox = document.getElementById('stats');
 const list = document.getElementById('surveyList');
 const dialog = document.getElementById('editDialog');
 const fieldsContainer = document.getElementById('fieldsContainer');
+const pageAlert = document.getElementById('pageAlert');
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function renderStats() {
-  const s = Store.getStats();
-  statsBox.innerHTML = `
-    <div class="stat-card"><div class="label">แบบสอบถามทั้งหมด</div><div class="value">${s.surveys}</div></div>
-    <div class="stat-card"><div class="label">เปิดใช้งาน</div><div class="value">${s.active_surveys}</div></div>
-    <div class="stat-card"><div class="label">คำตอบทั้งหมด</div><div class="value">${s.total_responses}</div></div>
-    <div class="stat-card"><div class="label">คำตอบวันนี้</div><div class="value">${s.today_responses}</div></div>
-  `;
+function showError(msg) {
+  pageAlert.innerHTML = `<div class="alert error">${escapeHtml(msg)}</div>`;
 }
 
-function renderSurveys() {
-  const surveys = Store.getSurveys();
-  if (surveys.length === 0) {
-    list.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถาม — กด "+ สร้างแบบสอบถาม" หรือ "+ ตัวอย่าง"</div>';
-    return;
+async function renderStats() {
+  try {
+    const s = await Store.getStats();
+    statsBox.innerHTML = `
+      <div class="stat-card"><div class="label">แบบสอบถามทั้งหมด</div><div class="value">${s.surveys}</div></div>
+      <div class="stat-card"><div class="label">เปิดใช้งาน</div><div class="value">${s.active_surveys}</div></div>
+      <div class="stat-card"><div class="label">คำตอบทั้งหมด</div><div class="value">${s.total_responses}</div></div>
+      <div class="stat-card"><div class="label">คำตอบวันนี้</div><div class="value">${s.today_responses}</div></div>
+    `;
+  } catch (err) {
+    if (err.unauthorized) return location.href = 'login.html';
+    showError(err.message);
   }
-  list.innerHTML = surveys.map((s) => `
-    <div class="survey-card">
-      <div style="flex: 1; min-width: 0;">
-        <div class="title">
-          ${escapeHtml(s.title)}
-          <span class="badge ${s.active ? 'active' : 'inactive'}">${s.active ? 'เปิด' : 'ปิด'}</span>
-        </div>
-        <div class="meta">
-          ${s.field_count} คำถาม · ${s.response_count} คำตอบ ·
-          <a class="link" href="survey.html?slug=${encodeURIComponent(s.slug)}" target="_blank">เปิดหน้าตอบ ↗</a>
-        </div>
-      </div>
-      <div class="actions">
-        <a class="btn sm" href="admin-survey.html?id=${s.id}">ดูคำตอบ</a>
-        <button class="btn sm ghost" data-action="edit" data-id="${s.id}">แก้ไข</button>
-        <button class="btn sm danger" data-action="delete" data-id="${s.id}">ลบ</button>
-      </div>
-    </div>
-  `).join('');
+}
 
-  list.querySelectorAll('button[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = parseInt(btn.dataset.id);
-      if (btn.dataset.action === 'edit') openEdit(id);
-      if (btn.dataset.action === 'delete') deleteSurvey(id);
+async function renderSurveys() {
+  try {
+    const surveys = await Store.getSurveys();
+    if (surveys.length === 0) {
+      list.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถาม — กด "+ สร้างแบบสอบถาม" หรือ "+ ตัวอย่าง"</div>';
+      return;
+    }
+    list.innerHTML = surveys.map((s) => `
+      <div class="survey-card">
+        <div style="flex: 1; min-width: 0;">
+          <div class="title">
+            ${escapeHtml(s.title)}
+            <span class="badge ${s.active ? 'active' : 'inactive'}">${s.active ? 'เปิด' : 'ปิด'}</span>
+          </div>
+          <div class="meta">
+            ${s.field_count} คำถาม · ${s.response_count} คำตอบ ·
+            <a class="link" href="survey.html?slug=${encodeURIComponent(s.slug)}" target="_blank">เปิดหน้าตอบ ↗</a>
+          </div>
+        </div>
+        <div class="actions">
+          <a class="btn sm" href="admin-survey.html?id=${s.id}">ดูคำตอบ</a>
+          <button class="btn sm ghost" data-action="edit" data-id="${s.id}">แก้ไข</button>
+          <button class="btn sm danger" data-action="delete" data-id="${s.id}">ลบ</button>
+        </div>
+      </div>
+    `).join('');
+
+    list.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id);
+        if (btn.dataset.action === 'edit') openEdit(id);
+        if (btn.dataset.action === 'delete') deleteSurvey(id);
+      });
     });
-  });
+  } catch (err) {
+    if (err.unauthorized) return location.href = 'login.html';
+    showError(err.message);
+  }
 }
 
 function addFieldRow(field) {
@@ -236,20 +252,23 @@ function collectFields() {
   });
 }
 
-function openEdit(id) {
+async function openEdit(id) {
   document.getElementById('editAlert').innerHTML = '';
   fieldsContainer.innerHTML = '';
   if (id) {
-    const survey = Store.getSurvey(id);
-    if (!survey) return alert('ไม่พบแบบสอบถาม');
-    document.getElementById('dialogTitle').textContent = 'แก้ไขแบบสอบถาม';
-    document.getElementById('editId').value = survey.id;
-    document.getElementById('editTitle').value = survey.title;
-    document.getElementById('editDesc').value = survey.description || '';
-    document.getElementById('editSlug').value = survey.slug;
-    document.getElementById('editSlug').disabled = true;
-    document.getElementById('editActive').checked = survey.active;
-    survey.fields.forEach(addFieldRow);
+    try {
+      const survey = await Store.getSurvey(id);
+      document.getElementById('dialogTitle').textContent = 'แก้ไขแบบสอบถาม';
+      document.getElementById('editId').value = survey.id;
+      document.getElementById('editTitle').value = survey.title;
+      document.getElementById('editDesc').value = survey.description || '';
+      document.getElementById('editSlug').value = survey.slug;
+      document.getElementById('editSlug').disabled = true;
+      document.getElementById('editActive').checked = survey.active;
+      survey.fields.forEach(addFieldRow);
+    } catch (err) {
+      return alert(err.message);
+    }
   } else {
     document.getElementById('dialogTitle').textContent = 'สร้างแบบสอบถามใหม่';
     document.getElementById('editId').value = '';
@@ -263,27 +282,35 @@ function openEdit(id) {
   dialog.showModal();
 }
 
-function deleteSurvey(id) {
+async function deleteSurvey(id) {
   if (!confirm('ลบแบบสอบถามนี้พร้อมคำตอบทั้งหมด?')) return;
-  Store.deleteSurvey(id);
-  renderStats();
-  renderSurveys();
+  try {
+    await Store.deleteSurvey(id);
+    renderStats();
+    renderSurveys();
+  } catch (err) {
+    showError(err.message);
+  }
 }
 
 document.getElementById('newBtn').addEventListener('click', () => openEdit(null));
 document.getElementById('cancelBtn').addEventListener('click', () => dialog.close());
 document.getElementById('addFieldBtn').addEventListener('click', () => addFieldRow());
 
-document.getElementById('seedBtn').addEventListener('click', () => {
-  const s = Store.seedDemo();
-  if (!s) return alert('มีข้อมูลอยู่แล้ว — ลบก่อนถ้าต้องการ seed ใหม่');
-  renderStats();
-  renderSurveys();
+document.getElementById('seedBtn').addEventListener('click', async () => {
+  try {
+    await Store.seedDemo();
+    renderStats();
+    renderSurveys();
+  } catch (err) {
+    alert(err.message);
+  }
 });
 
-document.getElementById('editForm').addEventListener('submit', (e) => {
+document.getElementById('editForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const alertBox = document.getElementById('editAlert');
+  const saveBtn = document.getElementById('saveBtn');
   alertBox.innerHTML = '';
   const id = document.getElementById('editId').value;
   const payload = {
@@ -297,24 +324,32 @@ document.getElementById('editForm').addEventListener('submit', (e) => {
     alertBox.innerHTML = '<div class="alert error">ต้องมีชื่อและคำถามอย่างน้อย 1 ข้อ</div>';
     return;
   }
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'กำลังบันทึก...';
   try {
-    if (id) Store.updateSurvey(id, payload);
-    else Store.createSurvey(payload);
+    if (id) await Store.updateSurvey(id, payload);
+    else await Store.createSurvey(payload);
     dialog.close();
     renderStats();
     renderSurveys();
   } catch (err) {
     alertBox.innerHTML = `<div class="alert error">${escapeHtml(err.message)}</div>`;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'บันทึก';
   }
 });
 
-document.getElementById('logoutBtn').addEventListener('click', () => {
-  Store.logout();
+document.getElementById('logoutBtn').addEventListener('click', async () => {
+  await Store.logout();
   location.href = 'login.html';
 });
 
-renderStats();
-renderSurveys();
+(async () => {
+  if (!(await Store.requireAuth('login.html'))) return;
+  renderStats();
+  renderSurveys();
+})();
 </script>
 </body>
 </html>

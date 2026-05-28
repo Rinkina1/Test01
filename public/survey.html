@@ -25,7 +25,7 @@
 <script src="storage.js"></script>
 <script>
 const params = new URLSearchParams(location.search);
-const slug = params.get('slug') || location.pathname.split('/').pop().replace(/\.html$/, '');
+const slug = params.get('slug');
 
 const alertBox = document.getElementById('alert');
 const form = document.getElementById('form');
@@ -90,7 +90,7 @@ function renderField(f) {
 
 function renderForm() {
   form.innerHTML = survey.fields.map(renderField).join('') +
-    `<button type="submit" class="btn lg" style="margin-top: 8px;">ส่งคำตอบ</button>`;
+    `<button type="submit" class="btn lg" style="margin-top: 8px;" id="submitBtn">ส่งคำตอบ</button>`;
 
   form.querySelectorAll('.rating').forEach((wrap) => {
     wrap.addEventListener('click', (e) => {
@@ -102,44 +102,44 @@ function renderForm() {
   });
 }
 
-function load() {
+async function load() {
   if (!slug) {
     document.getElementById('title').textContent = 'ไม่ระบุแบบสอบถาม';
     document.getElementById('desc').textContent = 'ต้องระบุ ?slug=... ใน URL';
     form.style.display = 'none';
     return;
   }
-  survey = Store.getSurveyBySlug(slug);
-  if (!survey) {
+  try {
+    survey = await Store.getSurveyBySlug(slug);
+    document.getElementById('title').textContent = survey.title;
+    document.getElementById('desc').textContent = survey.description || '';
+    renderForm();
+  } catch (err) {
     document.getElementById('title').textContent = 'ไม่พบแบบสอบถาม';
-    document.getElementById('desc').textContent = `slug: ${slug}`;
+    document.getElementById('desc').textContent = err.message;
     form.style.display = 'none';
-    return;
   }
-  document.getElementById('title').textContent = survey.title;
-  document.getElementById('desc').textContent = survey.description || '';
-  renderForm();
 }
 
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
   e.preventDefault();
   alertBox.innerHTML = '';
   const fd = new FormData(form);
   const data = {};
   for (const f of survey.fields) {
-    if (f.type === 'checkbox') {
-      data[f.key] = fd.getAll(f.key);
-    } else {
-      data[f.key] = fd.get(f.key);
-    }
+    if (f.type === 'checkbox') data[f.key] = fd.getAll(f.key);
+    else data[f.key] = fd.get(f.key);
   }
+  const submitBtn = form.querySelector('#submitBtn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'กำลังส่ง...'; }
   try {
-    Store.createResponse(slug, data);
+    await Store.createResponse(slug, data);
     showAlert('success', '✓ บันทึกข้อมูลเรียบร้อยแล้ว ขอบคุณสำหรับการตอบแบบสอบถาม');
     form.style.display = 'none';
     doneBox.style.display = 'block';
   } catch (err) {
     showAlert('error', err.message || 'เกิดข้อผิดพลาด');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'ส่งคำตอบ'; }
   }
 });
 

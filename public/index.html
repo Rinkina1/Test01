@@ -10,23 +10,22 @@
   <div class="container">
     <div class="header">
       <h1>Survey Platform</h1>
-      <p>ระบบเก็บข้อมูลแบบสอบถาม</p>
+      <p>ระบบเก็บข้อมูลแบบสอบถาม (SQLite backend)</p>
     </div>
     <div class="body">
-      <p style="margin-bottom: 18px;">ระบบสำหรับสร้างและเก็บข้อมูลแบบสอบถาม</p>
-
-      <h3 style="font-size: 16px; margin: 18px 0 10px;">แบบสอบถามที่เปิดให้ตอบ</h3>
-      <div id="surveys" class="survey-list"></div>
+      <h3 style="font-size: 16px; margin-bottom: 10px;">แบบสอบถามที่เปิดให้ตอบ</h3>
+      <div id="alert"></div>
+      <div id="surveys" class="survey-list">
+        <div class="empty">กำลังโหลด...</div>
+      </div>
 
       <hr style="margin: 28px 0; border: none; border-top: 1px solid #eee;">
 
       <div style="display: flex; gap: 10px; flex-wrap: wrap;">
         <a class="btn" href="admin.html">เข้าสู่ระบบผู้ดูแล</a>
-        <button class="btn secondary" id="seedBtn">โหลดตัวอย่างแบบสอบถาม</button>
       </div>
       <p class="muted" style="margin-top: 12px;">
-        ข้อมูลถูกเก็บใน localStorage ของเบราว์เซอร์ (ไม่ต้องตั้งค่าฐานข้อมูล)
-        — สำหรับโหมด server มี <code>server.js</code> พร้อมใช้งานใน README
+        ข้อมูลถูกเก็บใน SQLite (<code>data/survey.db</code>) — รัน <code>npm start</code> เพื่อเปิด server
       </p>
     </div>
   </div>
@@ -37,30 +36,29 @@ function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function renderSurveys() {
-  const list = Store.getSurveys().filter((s) => s.active);
+async function renderSurveys() {
   const box = document.getElementById('surveys');
-  if (list.length === 0) {
-    box.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถาม — กด "โหลดตัวอย่าง" หรือเข้าผู้ดูแลเพื่อสร้าง</div>';
-    return;
-  }
-  box.innerHTML = list.map((s) => `
-    <div class="survey-card">
-      <div style="flex:1; min-width:0;">
-        <div class="title">${escapeHtml(s.title)}</div>
-        <div class="meta">${s.field_count} คำถาม · ${s.response_count} คำตอบ</div>
+  const alertBox = document.getElementById('alert');
+  try {
+    const surveys = await Store.getPublicSurveys();
+    if (surveys.length === 0) {
+      box.innerHTML = '<div class="empty">ยังไม่มีแบบสอบถามที่เปิดให้ตอบ — login เข้า admin เพื่อสร้าง</div>';
+      return;
+    }
+    box.innerHTML = surveys.map((s) => `
+      <div class="survey-card">
+        <div style="flex:1; min-width:0;">
+          <div class="title">${escapeHtml(s.title)}</div>
+          <div class="meta">${s.field_count} คำถาม · ${s.response_count} คำตอบ</div>
+        </div>
+        <a class="btn sm" href="survey.html?slug=${encodeURIComponent(s.slug)}">เริ่มทำ →</a>
       </div>
-      <a class="btn sm" href="survey.html?slug=${encodeURIComponent(s.slug)}">เริ่มทำ →</a>
-    </div>
-  `).join('');
+    `).join('');
+  } catch (err) {
+    box.innerHTML = '';
+    alertBox.innerHTML = `<div class="alert error">${escapeHtml(err.message)}</div>`;
+  }
 }
-
-document.getElementById('seedBtn').addEventListener('click', () => {
-  const s = Store.seedDemo();
-  if (!s) return alert('มีข้อมูลอยู่แล้ว');
-  alert(`สร้างตัวอย่างแล้ว: "${s.title}"`);
-  renderSurveys();
-});
 
 renderSurveys();
 </script>

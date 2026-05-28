@@ -48,8 +48,6 @@
 
 <script src="storage.js"></script>
 <script>
-if (!Store.requireAuth('login.html')) {}
-
 const params = new URLSearchParams(location.search);
 const surveyId = parseInt(params.get('id'));
 let currentPage = 1;
@@ -65,47 +63,47 @@ function formatValue(v) {
   return escapeHtml(v);
 }
 
-function loadPage(page) {
-  survey = Store.getSurvey(surveyId);
-  if (!survey) {
-    document.getElementById('title').textContent = 'ไม่พบแบบสอบถาม';
-    document.getElementById('alert').innerHTML = '<div class="alert error">ไม่พบแบบสอบถาม หรือถูกลบไปแล้ว</div>';
-    return;
-  }
+async function loadPage(page) {
+  try {
+    const result = await Store.getResponses(surveyId, { page, limit: 20 });
+    survey = result.survey;
+    currentPage = page;
 
-  document.getElementById('title').textContent = survey.title;
-  document.getElementById('desc').textContent = survey.description || '';
-  document.getElementById('surveyLink').href = `survey.html?slug=${encodeURIComponent(survey.slug)}`;
+    document.getElementById('title').textContent = survey.title;
+    document.getElementById('desc').textContent = survey.description || '';
+    document.getElementById('surveyLink').href = `survey.html?slug=${encodeURIComponent(survey.slug)}`;
+    document.getElementById('total').textContent = result.total;
 
-  const { data, total, pages } = Store.getResponses(surveyId, { page, limit: 20 });
-  currentPage = page;
-  document.getElementById('total').textContent = total;
+    const headers = ['ID', ...survey.fields.map((f) => f.label), 'วันที่ตอบ', ''];
+    document.getElementById('thead').innerHTML =
+      '<tr>' + headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
 
-  const headers = ['ID', ...survey.fields.map((f) => f.label), 'วันที่ตอบ', ''];
-  document.getElementById('thead').innerHTML =
-    '<tr>' + headers.map((h) => `<th>${escapeHtml(h)}</th>`).join('') + '</tr>';
-
-  if (data.length === 0) {
-    document.getElementById('tbody').innerHTML =
-      `<tr><td colspan="${headers.length}" class="empty">ยังไม่มีคำตอบ</td></tr>`;
-  } else {
-    document.getElementById('tbody').innerHTML = data.map((r) => `
-      <tr>
-        <td>${r.id}</td>
-        ${survey.fields.map((f) => `<td>${formatValue(r.data?.[f.key])}</td>`).join('')}
-        <td><span class="muted">${new Date(r.created_at).toLocaleString('th-TH')}</span></td>
-        <td><button class="btn sm danger" data-id="${r.id}">ลบ</button></td>
-      </tr>
-    `).join('');
-    document.querySelectorAll('button[data-id]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (!confirm('ลบคำตอบนี้?')) return;
-        Store.deleteResponse(btn.dataset.id);
-        loadPage(currentPage);
+    if (result.data.length === 0) {
+      document.getElementById('tbody').innerHTML =
+        `<tr><td colspan="${headers.length}" class="empty">ยังไม่มีคำตอบ</td></tr>`;
+    } else {
+      document.getElementById('tbody').innerHTML = result.data.map((r) => `
+        <tr>
+          <td>${r.id}</td>
+          ${survey.fields.map((f) => `<td>${formatValue(r.data?.[f.key])}</td>`).join('')}
+          <td><span class="muted">${new Date(r.created_at + 'Z').toLocaleString('th-TH')}</span></td>
+          <td><button class="btn sm danger" data-id="${r.id}">ลบ</button></td>
+        </tr>
+      `).join('');
+      document.querySelectorAll('button[data-id]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('ลบคำตอบนี้?')) return;
+          await Store.deleteResponse(btn.dataset.id);
+          loadPage(currentPage);
+        });
       });
-    });
+    }
+    renderPagination(result.pages);
+  } catch (err) {
+    if (err.unauthorized) return location.href = 'login.html';
+    document.getElementById('title').textContent = 'เกิดข้อผิดพลาด';
+    document.getElementById('alert').innerHTML = `<div class="alert error">${escapeHtml(err.message)}</div>`;
   }
-  renderPagination(pages);
 }
 
 function renderPagination(totalPages) {
@@ -124,11 +122,17 @@ function renderPagination(totalPages) {
 }
 
 document.getElementById('exportBtn').addEventListener('click', () => {
-  if (!survey) return;
   Store.downloadCSV(surveyId);
 });
 
-loadPage(1);
+(async () => {
+  if (!(await Store.requireAuth('login.html'))) return;
+  if (!surveyId) {
+    document.getElementById('title').textContent = 'ไม่ระบุ survey id';
+    return;
+  }
+  loadPage(1);
+})();
 </script>
 </body>
 </html>
