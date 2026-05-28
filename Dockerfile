@@ -13,8 +13,8 @@ COPY . .
 RUN mkdir -p /app/data && chown -R node:node /app
 USER node
 ENV NODE_ENV=production
-ENV PORT=8080
 ENV DATA_DIR=/app/data
-EXPOSE 8080
+# PORT is provided by the hosting platform (Railway/Fly/etc.) — server.js reads process.env.PORT
+EXPOSE 3000
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "server.js"]

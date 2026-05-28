@@ -115,58 +115,49 @@ sqlite3 data/survey.db
 - `GET /health` — server status
 - `GET /api/health/db` — SQLite connection + response count
 
-## Deploy ขึ้น Fly.io (ไม่ต้องลงอะไรในเครื่อง)
+## Deploy ขึ้น Railway (ไม่ต้องลงอะไรในเครื่อง)
 
-ใน repo มี `Dockerfile`, `fly.toml`, GitHub Actions workflow ให้พร้อมแล้ว
+ใน repo มี `Dockerfile` + `railway.json` ให้พร้อมแล้ว Railway จะอ่านอัตโนมัติ
 
-### ขั้นตอน (Web UI — ไม่ต้องลง CLI)
+### ขั้นตอน (web UI ล้วน)
 
-1. **สมัคร Fly.io** — https://fly.io/app/sign-up (login ด้วย GitHub ได้) — ต้องผูกบัตรเครดิตแต่ไม่เก็บเงินจนกว่า usage จะเกิน free allowance ($5)
+1. **สมัคร Railway** — https://railway.com/login (login ด้วย GitHub)
+   - free trial: $5 credit (ใช้แอปนี้ได้ ~2 เดือน) จากนั้น Hobby plan $5/เดือน
 
-2. **Launch app จาก GitHub** — เปิด https://fly.io/launch แล้ว:
-   - Connect GitHub → เลือก `Rinkina1/Test01`
-   - Fly จะอ่าน `fly.toml` ใน repo อัตโนมัติ
-   - ตั้ง app name (ต้องไม่ซ้ำ เช่น `survey-rinkina1`)
-   - เลือก region: **sin** (Singapore)
-   - กด **Deploy**
+2. **สร้าง project จาก GitHub repo**
+   - กด **New Project** → **Deploy from GitHub repo**
+   - ครั้งแรกต้อง authorize Railway เข้าถึง GitHub
+   - เลือก repo `Rinkina1/Test01`
+   - Railway จะเริ่ม build จาก `Dockerfile` ทันที (ใช้เวลา ~3-5 นาที เพราะต้อง compile `better-sqlite3`)
 
-3. **สร้าง persistent volume สำหรับ SQLite**
-   - ไปที่ tab **Volumes** ของ app
-   - กด **Create Volume** → name: `survey_data`, region: `sin`, size: `1 GB`
-   - กลับไปที่ Deployments → Redeploy
+3. **สร้าง Volume สำหรับ SQLite** ⚠️ สำคัญ — ถ้าไม่ทำ DB จะหายทุกครั้งที่ redeploy
+   - คลิกที่ service → tab **Settings** → scroll หา **Volumes**
+   - กด **+ New Volume**
+   - Mount path: `/app/data`
+   - กด Save → Railway จะ restart service
 
-4. **ตั้ง Secrets** (ที่ tab **Secrets** ของ app):
-   - `JWT_SECRET` = สตริงสุ่มยาวๆ (เช่น `openssl rand -hex 32`)
-   - `ADMIN_PASSWORD` = password ที่ต้องการ
+4. **ตั้ง Environment Variables** (tab **Variables**)
+   - `JWT_SECRET` = สตริงสุ่มยาวๆ (สุ่มผ่าน PowerShell: `-join ((1..64) | %{[char[]]'abcdef0123456789' | Get-Random})`)
+   - `ADMIN_PASSWORD` = password ที่ต้องการใช้ login admin
    - `ADMIN_USERNAME` = `admin` (หรือเปลี่ยน)
+   - `NODE_ENV` = `production`
 
-5. รอ deploy เสร็จ — Fly จะให้ URL เช่น `https://survey-rinkina1.fly.dev` ใช้งานได้เลย
+5. **เปิด public URL**
+   - tab **Settings** → ส่วน **Networking** → **Generate Domain**
+   - จะได้ URL เช่น `https://test01-production.up.railway.app` — เปิดใช้งานได้เลย
 
-### Auto-deploy ด้วย GitHub Actions
+### Auto-deploy
 
-มี `.github/workflows/fly-deploy.yml` ให้ — ทุกครั้งที่ push ไป main จะ deploy อัตโนมัติ ขั้นตอน setup:
+Railway เชื่อม GitHub อัตโนมัติ — ทุกครั้งที่ push ไป main จะ deploy ใหม่เอง ไม่ต้องตั้งอะไรเพิ่ม
 
-1. ที่ Fly.io ไป **Account → Access Tokens** → สร้าง token ใหม่
-2. ที่ GitHub repo `Rinkina1/Test01` → **Settings → Secrets → Actions** → New secret
-   - Name: `FLY_API_TOKEN`
-   - Value: token ที่ได้จาก Fly
+### ตรวจสอบสถานะ
 
-หลังจากนั้น push commit ใหม่ → workflow รัน → deploy เอง
-
-### หรือใช้ flyctl CLI (ทางเลือก ถ้าต้องการลง)
-
-```powershell
-iwr https://fly.io/install.ps1 -useb | iex   # ติดตั้ง flyctl
-fly auth login
-fly launch --copy-config --no-deploy
-fly volumes create survey_data --region sin --size 1
-fly secrets set JWT_SECRET=$(openssl rand -hex 32) ADMIN_PASSWORD=mypassword
-fly deploy
-```
+- Logs: tab **Deployments** → คลิก deployment ล่าสุด → ดู build/runtime logs
+- DB health check: `https://<your-url>/api/health/db` — จะแสดง path ของ SQLite + จำนวน response
 
 ## Deploy ขึ้น platform อื่น
 
-ใช้ `Dockerfile` ที่ให้มาได้กับทุก platform (Railway / Render / Fly.io / VPS):
+ใช้ `Dockerfile` ที่ให้มาได้กับทุก platform (Render / Fly.io / VPS):
 
 1. set env: `JWT_SECRET`, `ADMIN_PASSWORD`, `NODE_ENV=production`
 2. **mount persistent volume ที่ `/app/data`** ไม่งั้น DB จะหายเวลา redeploy
